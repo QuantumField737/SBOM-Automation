@@ -5,83 +5,59 @@ set -e  # Exit on error
 echo "🔹 Starting SBOM pipeline..."
 
 # Ensure security-audit directory exists
-if [ ! -d "security-audit" ]; then
-    mkdir security-audit
-    echo "📂 Created security-audit folder"
-else
-    echo "📂 security-audit folder already exists"
-fi
+[ -d "security-audit" ] || mkdir security-audit
+echo "📂 security-audit folder is ready"
 
 # Define SBOM file
 SBOM_FILE="security-audit/sbom.json"
 
-# Install CycloneDX CLI if missing
+# Install tool if missing
 if ! command -v cyclonedx-cli &> /dev/null; then
-    echo "🛠️ Installing CycloneDX CLI..."
-    
-    if [[ "$OSTYPE" == "linux-gnu"* ]]; then
-        curl -sSfL https://github.com/CycloneDX/cyclonedx-cli/releases/latest/download/cyclonedx-linux-x64 -o /usr/local/bin/cyclonedx-cli
-        chmod +x /usr/local/bin/cyclonedx-cli
-    elif [[ "$OSTYPE" == "darwin"* ]]; then
-        brew install cyclonedx/cyclonedx-cli/cyclonedx-cli
-    else
-        echo "❌ Error: Unsupported OS"
-        exit 1
-    fi
+    echo "🛠️ Installing required components..."
+    curl -sSfL https://github.com/CycloneDX/cyclonedx-cli/releases/latest/download/cyclonedx-linux-x64 -o /usr/local/bin/cyclonedx-cli
+    chmod +x /usr/local/bin/cyclonedx-cli
 fi
 
 # Verify installation
 if ! command -v cyclonedx-cli &> /dev/null; then
-    echo "❌ Error: CycloneDX installation failed"
+    echo "❌ Installation failed"
     exit 127
 fi
 
-# Detect project type and generate SBOM
+# Generate SBOM
 echo "🛠️ Generating SBOM..."
-if [ -f "package.json" ]; then
-    cyclonedx-cli nodejs --output "$SBOM_FILE"
-elif [ -f "pom.xml" ]; then
-    cyclonedx-cli maven --output "$SBOM_FILE"
-elif [ -f "requirements.txt" ]; then
-    cyclonedx-cli python --output "$SBOM_FILE"
-elif [ -d ".git" ]; then
-    cyclonedx-cli git --output "$SBOM_FILE"
-else
-    echo "❌ Error: Could not detect project type for SBOM generation"
-    exit 1
+cyclonedx-cli --output "$SBOM_FILE"
+echo "✅ SBOM saved"
+
+# Validate SBOM file
+if [ ! -s "$SBOM_FILE" ]; then
+    echo "❌ SBOM file is empty or missing"
+    exit 23
 fi
-echo "✅ SBOM saved at $SBOM_FILE"
 
-# Define project name
-PROJECT_NAME="SBOM_Project"
-
-# Upload SBOM to Dependency-Track
+# Upload SBOM
 echo "📤 Uploading SBOM..."
-curl -s -X POST "$DEP_TRACK_URL/api/v1/bom" \
+UPLOAD_STATUS=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$DEP_TRACK_URL/api/v1/bom" \
     -H "X-Api-Key: $DEP_TRACK_API_KEY" \
     -F "autoCreate=true" \
-    -F "projectName=$PROJECT_NAME" \
+    -F "projectName=Project" \
     -F "projectVersion=1.0" \
-    -F "bom=@$SBOM_FILE"
+    -F "bom=@$SBOM_FILE")
 
-echo "⏳ Waiting for processing..."
-sleep 90  # Wait 90 seconds
-
-# Retrieve Project UUID
-echo "📡 Fetching project details..."
-PROJECT_UUID=$(curl -s "$DEP_TRACK_URL/api/v1/project?name=$PROJECT_NAME" \
-    -H "X-Api-Key: $DEP_TRACK_API_KEY" | jq -r '.[0].uuid')
-
-if [[ "$PROJECT_UUID" == "null" ]]; then
-    echo "❌ Error: Could not retrieve project UUID"
+if [[ "$UPLOAD_STATUS" -ne 200 && "$UPLOAD_STATUS" -ne 201 ]]; then
+    echo "❌ Upload failed ($UPLOAD_STATUS)"
     exit 1
 fi
 
-# Download Full Report
+# Wait for processing
+echo "⏳ Processing SBOM..."
+sleep 60
+
+# Fetch Report
 REPORT_FILE="security-audit/report.json"
 echo "📥 Downloading report..."
-curl -s "$DEP_TRACK_URL/api/v1/metrics/project/$PROJECT_UUID/current" \
+curl -s "$DEP_TRACK_URL/api/v1/metrics/project/Project/current" \
     -H "X-Api-Key: $DEP_TRACK_API_KEY" > "$REPORT_FILE"
 
-echo "✅ Report saved at $REPORT_FILE"
+echo "✅ Report saved"
 echo "🎉 Process completed!"
