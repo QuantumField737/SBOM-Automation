@@ -1,43 +1,58 @@
-name: Generate SBOM with Snyk (Self-Hosted)
+name: Generate SBOM
 
 on:
   push:
     branches:
-      - main
-  workflow_dispatch:
+      - main  # Adjust the branch as needed
+  pull_request:
+    branches:
+      - main  # Adjust the branch as needed
 
 jobs:
   generate-sbom:
-    runs-on: self-hosted
-
+    runs-on: self-hosted  # Use self-hosted runner
     steps:
-      - name: Checkout Code
+      - name: Checkout repository
         uses: actions/checkout@v3
 
-      - name: Install Snyk if Not Installed
+      - name: Check for security-audit folder
+        id: check-folder
         run: |
-          if ! command -v snyk &> /dev/null; then
-            curl -Lo snyk https://github.com/snyk/snyk/releases/latest/download/snyk-linux
-            chmod +x snyk
-            sudo mv snyk /usr/local/bin/
+          if [ -d "security-audit" ]; then
+            echo "security-audit folder exists"
+            echo "folder_exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "security-audit folder does not exist, creating it"
+            mkdir security-audit
+            echo "folder_exists=false" >> $GITHUB_OUTPUT
           fi
 
-      - name: Authenticate Snyk
-        run: snyk auth ${{ secrets.SNYK_TOKEN }}
-
-      - name: Ensure security-audit Directory Exists
-        run: mkdir -p security-audit
+      - name: Install CycloneDX CLI (if not already installed)
+        run: |
+          if ! command -v cyclonedx &> /dev/null; then
+            echo "CycloneDX CLI not found, installing..."
+            npm install -g @cyclonedx/cyclonedx-cli
+          else
+            echo "CycloneDX CLI is already installed"
+          fi
 
       - name: Generate SBOM
         run: |
-          REPO_NAME=$(basename "$GITHUB_REPOSITORY")
-          TIMESTAMP=$(date +"%Y%m%d-%H%M%S")
-          SBOM_FILE="security-audit/${REPO_NAME}_SBOM_${TIMESTAMP}.json"
-          snyk sbom --format=cyclonedx1.4+json > "$SBOM_FILE" || { echo "SBOM generation failed"; exit 1; }
+          # Get repository name
+          REPO_NAME=$(basename $(git rev-parse --show-toplevel))
 
-      - name: Commit and Push SBOM
+          # Count existing BOM files in security-audit folder
+          BOM_COUNT=$(ls -1q security-audit/$REPO_NAME-*.xml 2>/dev/null | wc -l)
+          BOM_COUNT=$((BOM_COUNT + 1))
+
+          # Generate SBOM file with the specified naming convention
+          cyclonedx-bom -o security-audit/$REPO_NAME-$BOM_COUNT.xml
+
+      - name: Commit and push SBOM file (if folder was created)
+        if: steps.check-folder.outputs.folder_exists == 'false'
         run: |
-          git config --global user.name "github-actions"
-          git config --global user.email "actions@github.com"
-          git add security-audit/
-          git diff --staged --quiet || (git commit -m "Updated SBOM" && git push)
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add security-audit
+          git commit -m "chore: Add security-audit folder and initial SBOM"
+          git push
