@@ -7,7 +7,7 @@ on:
 
 jobs:
   upload-sbom:
-    runs-on: ubuntu-22.04  # Use the latest supported runner version
+    runs-on: ubuntu-22.04  # Updated runner version
 
     steps:
       - name: Checkout repository
@@ -51,6 +51,8 @@ jobs:
           CRITICAL=$(echo $REPORT | jq '.vulnerabilities.critical')
           RISK_SCORE=$(echo $REPORT | jq '.riskScore')
 
+          mkdir -p security-audit  # Ensure folder exists
+
           SARIF_FILE="security-audit/deptrack-results.sarif"
 
           cat <<EOF > $SARIF_FILE
@@ -89,10 +91,4 @@ jobs:
           }
           EOF
 
-          echo "SARIF report saved at $SARIF_FILE"
-        env:
-          DEP_TRACK_URL: ${{ secrets.DEP_TRACK_URL }}
-          DEP_TRACK_API_KEY: ${{ secrets.DEP_TRACK_API_KEY }}
-
-      - name: Save SARIF as an artifact
-  
+          echo "SARIF report saved at 
