@@ -1,49 +1,50 @@
-name: Generate SBOM with Docker
+name: Generate SBOM with Snyk
 
 on:
   push:
     branches:
-      - main  # Adjust the branch as needed
-  pull_request:
-    branches:
-      - main  # Adjust the branch as needed
+      - main
+  workflow_dispatch:
 
 jobs:
   generate-sbom:
-    runs-on: self-hosted  # Use self-hosted runner
+    runs-on: ubuntu-latest
+
     steps:
-      - name: Checkout repository
+      - name: Checkout Code
         uses: actions/checkout@v3
 
-      - name: Check for security-audit folder
-        id: check-folder
+      - name: Install Snyk CLI
         run: |
-          if [ -d "security-audit" ]; then
-            echo "security-audit folder exists"
-            echo "folder_exists=true" >> $GITHUB_OUTPUT
-          else
-            echo "security-audit folder does not exist, creating it"
-            mkdir security-audit
-            echo "folder_exists=false" >> $GITHUB_OUTPUT
+          if ! command -v snyk &> /dev/null; then
+            curl -Lo snyk https://github.com/snyk/snyk/releases/latest/download/snyk-linux
+            chmod +x snyk
+            sudo mv snyk /usr/local/bin/
           fi
 
-      - name: Generate SBOM using Docker
+      - name: Authenticate Snyk
+        run: snyk auth ${{ secrets.SNYK_TOKEN }}
+
+      - name: Ensure security-audit Directory Exists
+        run: mkdir -p security-audit
+
+      - name: Generate SBOM
         run: |
-          # Get repository name
-          REPO_NAME=$(basename $(git rev-parse --show-toplevel))
+          REPO_NAME=${GITHUB_REPOSITORY##*/}
+          TIMESTAMP=$(date +"%Y%m%d-%H%M%S")
+          SBOM_FILE="security-audit/${REPO_NAME}_SBOM_${TIMESTAMP}.json"
+          
+          snyk sbom --format=cyclonedx1.4+json > "$SBOM_FILE"
 
-          # Count existing BOM files in security-audit folder
-          BOM_COUNT=$(ls -1q security-audit/$REPO_NAME-*.xml 2>/dev/null | wc -l)
-          BOM_COUNT=$((BOM_COUNT + 1))
+          # Verify SBOM file exists
+          if [ ! -s "$SBOM_FILE" ]; then
+            echo "Error: SBOM file is empty!"
+            exit 1
+          fi
 
-          # Generate SBOM file with the specified naming convention using Docker
-          docker run --rm -v $(pwd):/app cyclonedx/cyclonedx-cli cyclonedx-bom -o /app/security-audit/$REPO_NAME-$BOM_COUNT.xml
-
-      - name: Commit and push SBOM file (if folder was created)
-        if: steps.check-folder.outputs.folder_exists == 'false'
+      - name: Commit and Push SBOM
         run: |
-          git config --global user.name "github-actions[bot]"
-          git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git add security-audit
-          git commit -m "chore: Add security-audit folder and initial SBOM"
-          git push
+          git config --global user.name "github-actions"
+          git config --global user.email "actions@github.com"
+          git add security-audit/
+          git diff --staged --quiet || (git commit -m "Updated SBOM" && git push)
