@@ -27,14 +27,9 @@ jobs:
             echo "folder_exists=false" >> $GITHUB_OUTPUT
           fi
 
-      - name: Install CycloneDX CLI (if not already installed)
+      - name: Install CycloneDX CLI
         run: |
-          if ! command -v cyclonedx &> /dev/null; then
-            echo "CycloneDX CLI not found, installing..."
-            npm install -g @cyclonedx/cyclonedx-cli
-          else
-            echo "CycloneDX CLI is already installed"
-          fi
+          npm install -g @cyclonedx/cyclonedx-cli
 
       - name: Generate SBOM
         run: |
