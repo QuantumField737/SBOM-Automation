@@ -1,4 +1,4 @@
-name: Generate SBOM
+name: Generate SBOM with Docker
 
 on:
   push:
@@ -27,16 +27,7 @@ jobs:
             echo "folder_exists=false" >> $GITHUB_OUTPUT
           fi
 
-      - name: Install CycloneDX CLI
-        run: |
-          if ! command -v cyclonedx-bom &> /dev/null; then
-            echo "CycloneDX CLI not found, installing..."
-            npm install -g @cyclonedx/cyclonedx-cli
-          else
-            echo "CycloneDX CLI is already installed"
-          fi
-
-      - name: Generate SBOM
+      - name: Generate SBOM using Docker
         run: |
           # Get repository name
           REPO_NAME=$(basename $(git rev-parse --show-toplevel))
@@ -45,8 +36,8 @@ jobs:
           BOM_COUNT=$(ls -1q security-audit/$REPO_NAME-*.xml 2>/dev/null | wc -l)
           BOM_COUNT=$((BOM_COUNT + 1))
 
-          # Generate SBOM file with the specified naming convention
-          cyclonedx-bom -o security-audit/$REPO_NAME-$BOM_COUNT.xml
+          # Generate SBOM file with the specified naming convention using Docker
+          docker run --rm -v $(pwd):/app cyclonedx/cyclonedx-cli cyclonedx-bom -o /app/security-audit/$REPO_NAME-$BOM_COUNT.xml
 
       - name: Commit and push SBOM file (if folder was created)
         if: steps.check-folder.outputs.folder_exists == 'false'
