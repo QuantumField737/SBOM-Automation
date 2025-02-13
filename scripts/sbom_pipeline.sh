@@ -45,7 +45,7 @@ if [[ "$FILE_SIZE" -lt 100 ]]; then
     exit 23
 fi
 
-# **Use cURL with optimized settings**
+# **Upload SBOM**
 echo "📤 Uploading SBOM..."
 UPLOAD_STATUS=$(curl --retry 3 --connect-timeout 15 -s -o /dev/null -w "%{http_code}" -X POST "$DEP_TRACK_URL/api/v1/bom" \
     -H "X-Api-Key: $DEP_TRACK_API_KEY" \
@@ -59,15 +59,42 @@ if [[ "$UPLOAD_STATUS" -ne 200 && "$UPLOAD_STATUS" -ne 201 ]]; then
     exit 1
 fi
 
-# Wait for processing
-echo "⏳ Processing SBOM..."
-sleep 60
+# **Retrieve Project UUID**
+echo "📡 Fetching project UUID..."
+PROJECT_UUID=$(curl -s "$DEP_TRACK_URL/api/v1/project?name=PaymentsPipeline" \
+    -H "X-Api-Key: $DEP_TRACK_API_KEY" | jq -r '.[0].uuid')
 
-# Fetch Report
+if [[ -z "$PROJECT_UUID" || "$PROJECT_UUID" == "null" ]]; then
+    echo "❌ Error: Could not retrieve project UUID"
+    exit 1
+fi
+
+# **Poll for Report Availability (every 10s, max 5 minutes)**
+MAX_ATTEMPTS=30  # 30 attempts (5 minutes total)
+SLEEP_TIME=10     # 10 seconds between each attempt
+ATTEMPT=0
 REPORT_FILE="security-audit/payments-pipeline-report-$RUN_ID.json"
-echo "📥 Downloading report..."
-curl -s "$DEP_TRACK_URL/api/v1/metrics/project/PaymentsPipeline/current" \
-    -H "X-Api-Key: $DEP_TRACK_API_KEY" > "$REPORT_FILE"
 
-echo "✅ Report saved as $REPORT_FILE"
+echo "⏳ Waiting for report to be available (Polling every $SLEEP_TIME seconds)..."
+
+while [[ $ATTEMPT -lt $MAX_ATTEMPTS ]]; do
+    REPORT_STATUS=$(curl -s -o "$REPORT_FILE" -w "%{http_code}" "$DEP_TRACK_URL/api/v1/metrics/project/$PROJECT_UUID/current" \
+        -H "X-Api-Key: $DEP_TRACK_API_KEY")
+
+    if [[ "$REPORT_STATUS" -eq 200 && -s "$REPORT_FILE" ]]; then
+        echo "✅ Report is ready and saved as $REPORT_FILE"
+        break
+    fi
+
+    ATTEMPT=$((ATTEMPT + 1))
+    echo "🔄 Attempt $ATTEMPT/$MAX_ATTEMPTS: Report not ready yet. Retrying in $SLEEP_TIME seconds..."
+    sleep $SLEEP_TIME
+done
+
+# **Check if report was downloaded successfully**
+if [[ ! -s "$REPORT_FILE" ]]; then
+    echo "❌ Error: Report not available after $MAX_ATTEMPTS attempts"
+    exit 1
+fi
+
 echo "🎉 Payments Pipeline Process Completed!"
