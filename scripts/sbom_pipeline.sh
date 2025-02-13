@@ -15,15 +15,16 @@ fi
 # Define SBOM file
 SBOM_FILE="security-audit/sbom.json"
 
-# Automatically detect if an SBOM tool is installed
-if ! command -v sbom_generator &> /dev/null; then
-    echo "🛠️ Installing necessary components..."
+# Install CycloneDX CLI if missing
+if ! command -v cyclonedx &> /dev/null; then
+    echo "🛠️ Installing CycloneDX CLI..."
     
-    # Check OS and install the required tool (replace with real commands)
+    # Install CycloneDX CLI based on OS
     if [[ "$OSTYPE" == "linux-gnu"* ]]; then
-        sudo apt update && sudo apt install -y sbom_generator_package
+        curl -sSfL https://github.com/CycloneDX/cyclonedx-cli/releases/latest/download/cyclonedx-linux-x64 -o /usr/local/bin/cyclonedx
+        chmod +x /usr/local/bin/cyclonedx
     elif [[ "$OSTYPE" == "darwin"* ]]; then
-        brew install sbom_generator_package
+        brew install cyclonedx/cyclonedx-cli/cyclonedx-cli
     else
         echo "❌ Error: Unsupported OS"
         exit 1
@@ -31,20 +32,20 @@ if ! command -v sbom_generator &> /dev/null; then
 fi
 
 # Verify installation
-if ! command -v sbom_generator &> /dev/null; then
-    echo "❌ Error: Required component installation failed"
+if ! command -v cyclonedx &> /dev/null; then
+    echo "❌ Error: CycloneDX installation failed"
     exit 127
 fi
 
-# Generate SBOM
+# Generate SBOM using CycloneDX CLI
 echo "🛠️ Generating SBOM..."
-sbom_generator generate --output "$SBOM_FILE"  # Replace with actual command
+cyclonedx bom -o "$SBOM_FILE"
 echo "✅ SBOM saved at $SBOM_FILE"
 
 # Define project name (generic)
 PROJECT_NAME="SBOM_Project"
 
-# Upload SBOM
+# Upload SBOM to Dependency-Track
 echo "📤 Uploading SBOM..."
 curl -s -X POST "$DEP_TRACK_URL/api/v1/bom" \
     -H "X-Api-Key: $DEP_TRACK_API_KEY" \
