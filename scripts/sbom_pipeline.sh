@@ -1,6 +1,6 @@
 #!/bin/bash
 
-set -e  # Exit on any error
+set -e  # Exit on error
 
 echo "🔹 Starting SBOM pipeline..."
 
@@ -15,21 +15,30 @@ fi
 # Define SBOM file
 SBOM_FILE="security-audit/sbom.json"
 
-# Check if the required tool is installed, otherwise install it
-if ! command -v sbom_tool &> /dev/null; then
-    echo "🛠️ Installing required components..."
-    install_sbom_tool  # Placeholder for actual installation command
+# Automatically detect if an SBOM tool is installed
+if ! command -v sbom_generator &> /dev/null; then
+    echo "🛠️ Installing necessary components..."
+    
+    # Check OS and install the required tool (replace with real commands)
+    if [[ "$OSTYPE" == "linux-gnu"* ]]; then
+        sudo apt update && sudo apt install -y sbom_generator_package
+    elif [[ "$OSTYPE" == "darwin"* ]]; then
+        brew install sbom_generator_package
+    else
+        echo "❌ Error: Unsupported OS"
+        exit 1
+    fi
 fi
 
 # Verify installation
-if ! command -v sbom_tool &> /dev/null; then
+if ! command -v sbom_generator &> /dev/null; then
     echo "❌ Error: Required component installation failed"
     exit 127
 fi
 
 # Generate SBOM
 echo "🛠️ Generating SBOM..."
-sbom_tool generate --output "$SBOM_FILE"  # Placeholder for actual SBOM generation command
+sbom_generator generate --output "$SBOM_FILE"  # Replace with actual command
 echo "✅ SBOM saved at $SBOM_FILE"
 
 # Define project name (generic)
