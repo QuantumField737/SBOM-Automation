@@ -37,9 +37,18 @@ if [ ! -s "$SBOM_FILE" ]; then
     exit 23
 fi
 
-# Upload SBOM
+# **Check SBOM size before upload**
+FILE_SIZE=$(stat -c%s "$SBOM_FILE")
+echo "📏 SBOM file size: $FILE_SIZE bytes"
+
+if [[ "$FILE_SIZE" -lt 100 ]]; then
+    echo "❌ Error: SBOM file is too small, possibly corrupted."
+    exit 23
+fi
+
+# **Use cURL with increased buffer size**
 echo "📤 Uploading SBOM..."
-UPLOAD_STATUS=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$DEP_TRACK_URL/api/v1/bom" \
+UPLOAD_STATUS=$(curl --max-filesize 500M --limit-rate 500K -s -o /dev/null -w "%{http_code}" -X POST "$DEP_TRACK_URL/api/v1/bom" \
     -H "X-Api-Key: $DEP_TRACK_API_KEY" \
     -F "autoCreate=true" \
     -F "projectName=PaymentsPipeline" \
@@ -63,3 +72,4 @@ curl -s "$DEP_TRACK_URL/api/v1/metrics/project/PaymentsPipeline/current" \
 
 echo "✅ Report saved as $REPORT_FILE"
 echo "🎉 Payments Pipeline Process Completed!"
+
