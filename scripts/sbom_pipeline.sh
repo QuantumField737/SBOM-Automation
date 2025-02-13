@@ -16,13 +16,12 @@ fi
 SBOM_FILE="security-audit/sbom.json"
 
 # Install CycloneDX CLI if missing
-if ! command -v cyclonedx &> /dev/null; then
+if ! command -v cyclonedx-cli &> /dev/null; then
     echo "🛠️ Installing CycloneDX CLI..."
     
-    # Install CycloneDX CLI based on OS
     if [[ "$OSTYPE" == "linux-gnu"* ]]; then
-        curl -sSfL https://github.com/CycloneDX/cyclonedx-cli/releases/latest/download/cyclonedx-linux-x64 -o /usr/local/bin/cyclonedx
-        chmod +x /usr/local/bin/cyclonedx
+        curl -sSfL https://github.com/CycloneDX/cyclonedx-cli/releases/latest/download/cyclonedx-linux-x64 -o /usr/local/bin/cyclonedx-cli
+        chmod +x /usr/local/bin/cyclonedx-cli
     elif [[ "$OSTYPE" == "darwin"* ]]; then
         brew install cyclonedx/cyclonedx-cli/cyclonedx-cli
     else
@@ -32,17 +31,28 @@ if ! command -v cyclonedx &> /dev/null; then
 fi
 
 # Verify installation
-if ! command -v cyclonedx &> /dev/null; then
+if ! command -v cyclonedx-cli &> /dev/null; then
     echo "❌ Error: CycloneDX installation failed"
     exit 127
 fi
 
-# Generate SBOM using CycloneDX CLI
+# Detect project type and generate SBOM
 echo "🛠️ Generating SBOM..."
-cyclonedx bom -o "$SBOM_FILE"
+if [ -f "package.json" ]; then
+    cyclonedx-cli nodejs --output "$SBOM_FILE"
+elif [ -f "pom.xml" ]; then
+    cyclonedx-cli maven --output "$SBOM_FILE"
+elif [ -f "requirements.txt" ]; then
+    cyclonedx-cli python --output "$SBOM_FILE"
+elif [ -d ".git" ]; then
+    cyclonedx-cli git --output "$SBOM_FILE"
+else
+    echo "❌ Error: Could not detect project type for SBOM generation"
+    exit 1
+fi
 echo "✅ SBOM saved at $SBOM_FILE"
 
-# Define project name (generic)
+# Define project name
 PROJECT_NAME="SBOM_Project"
 
 # Upload SBOM to Dependency-Track
