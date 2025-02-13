@@ -5,7 +5,7 @@ on:
 
 jobs:
   upload-sbom:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-22.04  # Stable runner version
 
     steps:
       - name: Checkout Repository
