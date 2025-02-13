@@ -1,4 +1,4 @@
-name: Generate SBOM with Snyk (Self-Hosted Runner)
+name: Generate SBOM with Snyk (Self-Hosted)
 
 on:
   push:
@@ -8,25 +8,36 @@ on:
 
 jobs:
   generate-sbom:
-    runs-on: self-hosted  # Uses self-hosted runner
+    runs-on: self-hosted
 
     steps:
       - name: Checkout Code
         uses: actions/checkout@v3
+
+      - name: Install Snyk if Not Installed
+        run: |
+          if ! command -v snyk &> /dev/null; then
+            curl -Lo snyk https://github.com/snyk/snyk/releases/latest/download/snyk-linux
+            chmod +x snyk
+            sudo mv snyk /usr/local/bin/
+          fi
+
+      - name: Authenticate Snyk
+        run: snyk auth ${{ secrets.SNYK_TOKEN }}
 
       - name: Ensure security-audit Directory Exists
         run: mkdir -p security-audit
 
       - name: Generate SBOM
         run: |
-          REPO_NAME="${GITHUB_REPOSITORY##*/}"  # Extracts repo name
-          TIMESTAMP=$(date +"%Y%m%d-%H%M%S")    # Simplified timestamp format
+          REPO_NAME=$(basename "$GITHUB_REPOSITORY")
+          TIMESTAMP=$(date +"%Y%m%d-%H%M%S")
           SBOM_FILE="security-audit/${REPO_NAME}_SBOM_${TIMESTAMP}.json"
-          snyk sbom --format=cyclonedx1.4+json > "$SBOM_FILE"
+          snyk sbom --format=cyclonedx1.4+json > "$SBOM_FILE" || { echo "SBOM generation failed"; exit 1; }
 
       - name: Commit and Push SBOM
         run: |
+          git config --global user.name "github-actions"
+          git config --global user.email "actions@github.com"
           git add security-audit/
-          git commit -m "SBOM update"
-          git push || echo "No changes to commit."
-
+          git diff --staged --quiet || (git commit -m "Updated SBOM" && git push)
