@@ -27,4 +27,3 @@ jobs:
         env:
           DT_API_KEY: ${{ secrets.DT_API_KEY }}
         run: scripts/sbom_pipeline.sh
-
