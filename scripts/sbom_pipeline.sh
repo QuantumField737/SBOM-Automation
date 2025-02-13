@@ -1,51 +1,48 @@
-#!/bin/bash
+name: Generate SBOM with Snyk (Self-Hosted Runner)
 
-set -e  # Exit on error
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
 
-echo "🔹 Starting SBOM generation using CycloneDX..."
+jobs:
+  generate-sbom:
+    runs-on: self-hosted  # Use the self-hosted runner
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
 
-# Ensure security-audit folder exists
-mkdir -p security-audit
-echo "📂 security-audit folder is ready"
+      - name: Ensure Snyk CLI is Installed (if not pre-installed)
+        run: |
+          if ! command -v snyk &> /dev/null
+          then
+            echo "Snyk CLI not found. Installing..."
+            curl -Lo snyk https://github.com/snyk/snyk/releases/latest/download/snyk-linux
+            chmod +x snyk
+            sudo mv snyk /usr/local/bin/
+          else
+            echo "Snyk CLI already installed."
+          fi
 
-# Define SBOM file name (ensures unique names)
-RUN_ID=$(date +%s)
-SBOM_FILE="security-audit/sbom-run-$RUN_ID.json"
+      - name: Authenticate Snyk
+        run: snyk auth ${{ secrets.SNYK_TOKEN }}
 
-# Install CycloneDX CLI if missing
-if ! command -v cyclonedx-cli &> /dev/null; then
-    echo "🛠️ Installing CycloneDX CLI..."
-    curl -sSfL https://github.com/CycloneDX/cyclonedx-cli/releases/latest/download/cyclonedx-linux-x64 -o /usr/local/bin/cyclonedx-cli
-    chmod +x /usr/local/bin/cyclonedx-cli
-fi
+      - name: Ensure security-audit Directory Exists
+        run: mkdir -p security-audit
 
-# Verify installation
-if ! command -v cyclonedx-cli &> /dev/null; then
-    echo "❌ CycloneDX installation failed"
-    exit 127
-fi
+      - name: Generate SBOM
+        run: |
+          REPO_NAME=${GITHUB_REPOSITORY##*/}
+          TIMESTAMP=$(date +"%Y-%m-%d_%H-%M-%S")
+          SBOM_FILE="security-audit/${REPO_NAME}_SBOM_${TIMESTAMP}.json"
+          snyk sbom --format cyclonedx1.4+json > "$SBOM_FILE"
 
-# Detect project type and generate SBOM
-echo "🛠️ Generating SBOM..."
-if [ -f "package.json" ]; then
-    cyclonedx-cli npm --output "$SBOM_FILE"
-elif [ -f "pom.xml" ]; then
-    cyclonedx-cli maven --output "$SBOM_FILE"
-elif [ -f "requirements.txt" ]; then
-    cyclonedx-cli python --output "$SBOM_FILE"
-elif [ -f "Cargo.toml" ]; then
-    cyclonedx-cli rust --output "$SBOM_FILE"
-elif [ -d ".git" ]; then
-    cyclonedx-cli git --output "$SBOM_FILE"
-else
-    echo "❌ No recognized package manager found. SBOM generation failed."
-    exit 1
-fi
-
-# Check if SBOM was created
-if [ ! -s "$SBOM_FILE" ]; then
-    echo "❌ SBOM file is empty or missing"
-    exit 23
-fi
-
-echo "✅ SBOM successfully generated and saved at: $SBOM_FILE"
+      - name: Commit and Push SBOM to Repo
+        run: |
+          git config --global user.name "github-actions"
+          git config --global user.email "actions@github.com"
+          git add security-audit/
+          git commit -m "Updated SBOM"
+          git push
+        continue-on-error: true  # Prevents failure if no changes exist
