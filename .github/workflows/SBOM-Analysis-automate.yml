@@ -8,15 +8,23 @@ on:
 
 jobs:
   upload_sbom:
-    runs-on: self-hosted  # Executes on your self-hosted runner
+    runs-on: self-hosted  # Runs on your self-hosted runner
     steps:
-      - name: Checkout Repository
+      - name: Checkout Repository  # Ensures scripts/ folder exists
         uses: actions/checkout@v3
 
+      - name: Verify Script Existence
+        run: |
+          if [ ! -f scripts/sbom_pipeline.sh ]; then
+            echo "ERROR: Script 'scripts/sbom_pipeline.sh' not found!"
+            exit 1
+          fi
+
       - name: Make Shell Script Executable
-        run: chmod +x scripts/dependency_track_upload.sh
+        run: chmod +x scripts/sbom_pipeline.sh
 
       - name: Run SBOM Upload Script
         env:
           DT_API_KEY: ${{ secrets.DT_API_KEY }}
-        run: scripts/dependency_track_upload.sh
+        run: scripts/sbom_pipeline.sh
+
