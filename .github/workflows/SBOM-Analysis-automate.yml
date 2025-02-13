@@ -29,7 +29,12 @@ jobs:
 
       - name: Install CycloneDX CLI
         run: |
-          npm install -g @cyclonedx/cyclonedx-cli
+          if ! command -v cyclonedx-bom &> /dev/null; then
+            echo "CycloneDX CLI not found, installing..."
+            npm install -g @cyclonedx/cyclonedx-cli
+          else
+            echo "CycloneDX CLI is already installed"
+          fi
 
       - name: Generate SBOM
         run: |
