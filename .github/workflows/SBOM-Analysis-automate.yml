@@ -1,93 +1,21 @@
-name: Upload SBOM to Dependency-Track & Generate SARIF Report
+name: SBOM Processing & Dependency-Track Report Download
 
 on:
   push:
 
 jobs:
-  upload-sbom:
-    runs-on: self-hosted  # Using self-hosted runner
+  sbom-analysis:
+    runs-on: self-hosted
 
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v3
 
-      - name: Find SBOM File
-        id: find-sbom
-        run: |
-          if [ -d "security-audit" ] && [ "$(ls -A security-audit/*.json 2>/dev/null)" ]; then
-            SBOM_FILE=$(ls -A security-audit/*.json | head -n 1)
-            PROJECT_NAME=$(basename "$SBOM_FILE" .json)
-            echo "SBOM_FILE=$SBOM_FILE" >> $GITHUB_ENV
-            echo "PROJECT_NAME=$PROJECT_NAME" >> $GITHUB_ENV
-          else
-            echo "No SBOM file found."
-            exit 1
-          fi
+      - name: Make Script Executable
+        run: chmod +x scripts/sbom_pipeline.sh
 
-      - name: Upload SBOM to Dependency-Track (AutoCreate)
-        run: |
-          curl -X POST "$DEP_TRACK_URL/api/v1/bom" \
-            -H "X-Api-Key: $DEP_TRACK_API_KEY" \
-            -F "autoCreate=true" \
-            -F "projectName=$PROJECT_NAME" \
-            -F "projectVersion=1.0" \
-            -F "bom=@$SBOM_FILE"
+      - name: Run SBOM Processing Pipeline
+        run: ./scripts/sbom_pipeline.sh
         env:
-          DEP_TRACK_URL: http://localhost:8081  # Direct local connection
-          DEP_TRACK_API_KEY: ${{ secrets.DEP_TRACK_API_KEY }}
-
-      - name: Wait for Dependency-Track Processing
-        run: sleep 60  # Wait for processing
-
-      - name: Fetch Security Report & Save SARIF
-        run: |
-          REPORT=$(curl -s "$DEP_TRACK_URL/api/v1/metrics/project/$PROJECT_NAME/current" \
-            -H "X-Api-Key: $DEP_TRACK_API_KEY")
-
-          HIGH=$(echo $REPORT | jq '.vulnerabilities.high')
-          CRITICAL=$(echo $REPORT | jq '.vulnerabilities.critical')
-          RISK_SCORE=$(echo $REPORT | jq '.riskScore')
-
-          mkdir -p security-audit
-          SARIF_FILE="security-audit/deptrack-results.sarif"
-
-          cat <<EOF > $SARIF_FILE
-          {
-            "version": "2.1.0",
-            "runs": [{
-              "tool": {
-                "driver": {
-                  "name": "Dependency-Track",
-                  "rules": [{
-                    "id": "high-vulnerabilities",
-                    "shortDescription": {"text": "High severity vulnerabilities"},
-                    "fullDescription": {"text": "Detected high severity vulnerabilities"},
-                    "defaultConfiguration": {"level": "warning"}
-                  }, {
-                    "id": "critical-vulnerabilities",
-                    "shortDescription": {"text": "Critical severity vulnerabilities"},
-                    "fullDescription": {"text": "Detected critical severity vulnerabilities"},
-                    "defaultConfiguration": {"level": "error"}
-                  }]
-                }
-              },
-              "results": [{
-                "ruleId": "high-vulnerabilities",
-                "level": "warning",
-                "message": {"text": "High severity vulnerabilities: $HIGH"}
-              }, {
-                "ruleId": "critical-vulnerabilities",
-                "level": "error",
-                "message": {"text": "Critical severity vulnerabilities: $CRITICAL"}
-              }],
-              "properties": {
-                "riskScore": "$RISK_SCORE"
-              }
-            }]
-          }
-          EOF
-
-          echo "SARIF report saved at $SARIF_FILE"
-        env:
-          DEP_TRACK_URL: http://localhost:8081  # Direct local connection
+          DEP_TRACK_URL: ${{ secrets.DEP_TRACK_URL }}
           DEP_TRACK_API_KEY: ${{ secrets.DEP_TRACK_API_KEY }}
