@@ -1,4 +1,4 @@
-name: Generate SBOM with Snyk (Self-Hosted Runner)
+name: Generate CycloneDX SBOM
 
 on:
   push:
@@ -8,63 +8,24 @@ on:
 
 jobs:
   generate-sbom:
-    runs-on: self-hosted  # Uses self-hosted runner
+    runs-on: self-hosted  # Use your self-hosted runner
 
     steps:
       - name: Checkout Code
         uses: actions/checkout@v3
 
-      - name: Check Node.js Installation
-        run: |
-          if ! command -v node &> /dev/null; then
-            echo "Error: Node.js is not installed on the self-hosted runner!"
-            exit 1
-          fi
-          node --version
+      - name: Set Up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '14'  # Ensure this matches your project's Node.js version
 
       - name: Install Dependencies
-        run: |
-          if [ -f package.json ]; then
-            npm install
-          else
-            echo "Error: package.json not found!"
-            exit 1
-          fi
+        run: npm install
 
-      - name: Check Snyk Installation
-        run: |
-          if ! command -v snyk &> /dev/null; then
-            echo "Installing Snyk CLI..."
-            curl -Lo snyk https://github.com/snyk/snyk/releases/latest/download/snyk-linux
-            chmod +x snyk
-            sudo mv snyk /usr/local/bin/
-          fi
-          snyk --version
-
-      - name: Authenticate Snyk
-        run: snyk auth ${{ secrets.SNYK_TOKEN }}
-
-      - name: Ensure security-audit Directory Exists
-        run: mkdir -p security-audit
+      - name: Install CycloneDX NPM Tool
+        run: npm install --save-dev @cyclonedx/cyclonedx-npm
 
       - name: Generate SBOM
         run: |
-          REPO_NAME=${GITHUB_REPOSITORY##*/}
-          TIMESTAMP=$(date +"%Y%m%d-%H%M%S")
-          SBOM_FILE="security-audit/${REPO_NAME}_SBOM_${TIMESTAMP}.json"
-
-          echo "Generating SBOM at $SBOM_FILE..."
-          snyk sbom --format=cyclonedx1.4+json --package-manager=npm > "$SBOM_FILE"
-
-          echo "Checking SBOM file..."
-          if [ ! -s "$SBOM_FILE" ]; then
-            echo "Error: SBOM file is empty!"
-            exit 1
-          fi
-
-      - name: Commit and Push SBOM
-        run: |
-          git config --global user.name "github-actions"
-          git config --global user.email "actions@github.com"
-          git add security-audit/
-          git diff --staged --quiet || (git commit -m "Updated SBOM" && git push)
+          mkdir -p security-audit
+          npx @cyclonedx/cyclonedx-npm --output-file security-audit/bom.json
