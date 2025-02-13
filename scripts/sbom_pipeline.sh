@@ -32,7 +32,6 @@ fi
 # Generate SBOM
 echo "🛠️ Generating SBOM..."
 syft . -o cyclonedx-json > "$SBOM_FILE"
-echo "✅ SBOM saved as $SBOM_FILE"
 
 # Check SBOM file
 if [ ! -s "$SBOM_FILE" ]; then
@@ -40,19 +39,23 @@ if [ ! -s "$SBOM_FILE" ]; then
     exit 23
 fi
 
+echo "✅ SBOM created and saved in $SBOM_FILE"
+
 # Upload SBOM
 echo "📤 Uploading SBOM..."
-UPLOAD_STATUS=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$DEP_TRACK_URL/api/v1/bom" \
+UPLOAD_RESPONSE=$(curl -s -w "%{http_code}" -o /dev/null -X POST "$DEP_TRACK_URL/api/v1/bom" \
     -H "X-Api-Key: $DEP_TRACK_API_KEY" \
     -F "autoCreate=true" \
     -F "projectName=PaymentsPipeline" \
     -F "projectVersion=1.0" \
     -F "bom=@$SBOM_FILE")
 
-if [[ "$UPLOAD_STATUS" -ne 200 && "$UPLOAD_STATUS" -ne 201 ]]; then
-    echo "❌ Upload failed ($UPLOAD_STATUS)"
+if [[ "$UPLOAD_RESPONSE" -ne 200 && "$UPLOAD_RESPONSE" -ne 201 ]]; then
+    echo "❌ Upload failed ($UPLOAD_RESPONSE)"
     exit 1
 fi
+
+echo "✅ SBOM uploaded successfully"
 
 # Get project UUID
 echo "📡 Fetching project UUID..."
@@ -64,7 +67,9 @@ if [[ -z "$PROJECT_UUID" || "$PROJECT_UUID" == "null" ]]; then
     exit 1
 fi
 
-# Poll for report
+echo "✅ Project UUID: $PROJECT_UUID"
+
+# Poll for report availability
 REPORT_FILE="security-audit/payments-pipeline-report-$RUN_ID.json"
 echo "⏳ Waiting for report..."
 
@@ -73,11 +78,11 @@ for i in {1..30}; do
         -H "X-Api-Key: $DEP_TRACK_API_KEY"
 
     if [[ -s "$REPORT_FILE" ]]; then
-        echo "✅ Report saved as $REPORT_FILE"
+        echo "✅ Report saved in $REPORT_FILE"
         exit 0
     fi
 
-    echo "🔄 Report not ready yet. Retrying in 10 seconds..."
+    echo "🔄 Attempt $i: Report not ready. Retrying in 10 seconds..."
     sleep 10
 done
 
