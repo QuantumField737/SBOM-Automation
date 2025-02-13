@@ -5,7 +5,7 @@ on:
 
 jobs:
   upload-sbom:
-    runs-on: ubuntu-22.04  # Stable runner version
+    runs-on: ubuntu-22.04  # Stable GitHub runner
 
     steps:
       - name: Checkout Repository
@@ -91,9 +91,3 @@ jobs:
         env:
           DEP_TRACK_URL: ${{ secrets.DEP_TRACK_URL }}
           DEP_TRACK_API_KEY: ${{ secrets.DEP_TRACK_API_KEY }}
-
-      - name: Save SARIF as Artifact
-        uses: actions/upload-artifact@v3
-        with:
-          name: SARIF_Report
-          path: security-audit/deptrack-results.sarif
