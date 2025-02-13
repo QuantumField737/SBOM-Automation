@@ -1,0 +1,96 @@
+name: Upload SBOM to Dependency-Track
+
+on:
+  push:
+    branches:
+      - main
+      - 'release/*'
+
+jobs:
+  check-and-upload-sbom:
+    name: Check SBOM in Security-Audit and Upload to Dependency-Track
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Check if security-audit folder exists
+        id: check-folder
+        run: |
+          if [ -d "security-audit" ]; then
+            echo "SEC_AUDIT_EXISTS=true" >> $GITHUB_ENV
+          else
+            echo "SEC_AUDIT_EXISTS=false" >> $GITHUB_ENV
+          fi
+
+      - name: Find SBOM file
+        id: find-sbom
+        if: env.SEC_AUDIT_EXISTS == 'true'
+        run: |
+          SBOM_FILE=$(find security-audit -name "*.json" | head -n 1)
+          if [ -n "$SBOM_FILE" ]; then
+            echo "SBOM_FILE=$SBOM_FILE" >> $GITHUB_ENV
+            echo "SBOM found: $SBOM_FILE"
+          else
+            echo "No SBOM file found."
+            exit 0  # Exit if no SBOM found
+          fi
+
+      - name: Create Dependency-Track Project
+        if: env.SBOM_FILE != ''
+        run: |
+          PROJECT_NAME=$(basename $SBOM_FILE .json)
+
+          PROJECT_RESPONSE=$(curl -s -X POST "$DEP_TRACK_URL/api/v1/project" \
+            -H "Content-Type: application/json" \
+            -H "X-Api-Key: $DEP_TRACK_API_KEY" \
+            -d '{
+              "name": "'$PROJECT_NAME'",
+              "active": true,
+              "classifier": "APPLICATION",
+              "description": "Project SBOM Analysis for '$PROJECT_NAME'"
+            }')
+
+          PROJECT_UUID=$(echo $PROJECT_RESPONSE | jq -r '.uuid')
+          echo "PROJECT_UUID=$PROJECT_UUID" >> $GITHUB_ENV
+        env:
+          DEP_TRACK_URL: ${{ secrets.DEP_TRACK_URL }}
+          DEP_TRACK_API_KEY: ${{ secrets.DEP_TRACK_API_KEY }}
+
+      - name: Upload SBOM to Dependency-Track
+        if: env.SBOM_FILE != ''
+        run: |
+          curl -s -X PUT "$DEP_TRACK_URL/api/v1/bom" \
+            -H "Content-Type: application/json" \
+            -H "X-Api-Key: $DEP_TRACK_API_KEY" \
+            -d '{
+              "project": "'$PROJECT_UUID'",
+              "bom": "'$(base64 -w 0 $SBOM_FILE)'"
+            }'
+        env:
+          DEP_TRACK_URL: ${{ secrets.DEP_TRACK_URL }}
+          DEP_TRACK_API_KEY: ${{ secrets.DEP_TRACK_API_KEY }}
+
+      - name: Wait for Dependency-Track Processing
+        if: env.SBOM_FILE != ''
+        run: sleep 180  # Wait 3 minutes
+
+      - name: Fetch Security Report from Dependency-Track
+        if: env.SBOM_FILE != ''
+        run: |
+          REPORT_RESPONSE=$(curl -s -X GET "$DEP_TRACK_URL/api/v1/metrics/project/$PROJECT_UUID/current" \
+            -H "X-Api-Key: $DEP_TRACK_API_KEY")
+
+          echo "Report Response: $REPORT_RESPONSE"
+
+          HIGH=$(echo $REPORT_RESPONSE | jq '.vulnerabilities.high')
+          CRITICAL=$(echo $REPORT_RESPONSE | jq '.vulnerabilities.critical')
+          RISK_SCORE=$(echo $REPORT_RESPONSE | jq '.riskScore')
+
+          echo "High vulnerabilities: $HIGH"
+          echo "Critical vulnerabilities: $CRITICAL"
+          echo "Risk Score: $RISK_SCORE"
+        env:
+          DEP_TRACK_URL: ${{ secrets.DEP_TRACK_URL }}
+          DEP_TRACK_API_KEY: ${{ secrets.DEP_TRACK_API_KEY }}
