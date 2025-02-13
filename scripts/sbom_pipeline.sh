@@ -13,22 +13,21 @@ RUN_COUNT=$(ls security-audit/payments-pipeline-run-* 2>/dev/null | wc -l)
 RUN_ID=$((RUN_COUNT + 1))
 SBOM_FILE="security-audit/payments-pipeline-run-$RUN_ID.json"
 
-# Install CycloneDX CLI if missing
-if ! command -v cyclonedx-cli &> /dev/null; then
+# Install Syft if missing
+if ! command -v syft &> /dev/null; then
     echo "🛠️ Installing required components..."
-    curl -sSfL https://github.com/CycloneDX/cyclonedx-cli/releases/latest/download/cyclonedx-linux-x64 -o /usr/local/bin/cyclonedx-cli
-    chmod +x /usr/local/bin/cyclonedx-cli
+    curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh
 fi
 
 # Verify installation
-if ! command -v cyclonedx-cli &> /dev/null; then
+if ! command -v syft &> /dev/null; then
     echo "❌ Installation failed"
     exit 127
 fi
 
 # Generate SBOM
 echo "🛠️ Generating SBOM..."
-cyclonedx-cli --output "$SBOM_FILE"
+syft . -o cyclonedx-json > "$SBOM_FILE"
 echo "✅ SBOM saved as $SBOM_FILE"
 
 # Validate SBOM file
@@ -46,9 +45,9 @@ if [[ "$FILE_SIZE" -lt 100 ]]; then
     exit 23
 fi
 
-# **Use cURL with increased buffer size**
+# **Use cURL with optimized settings**
 echo "📤 Uploading SBOM..."
-UPLOAD_STATUS=$(curl --max-filesize 500M --limit-rate 500K -s -o /dev/null -w "%{http_code}" -X POST "$DEP_TRACK_URL/api/v1/bom" \
+UPLOAD_STATUS=$(curl --retry 3 --connect-timeout 15 -s -o /dev/null -w "%{http_code}" -X POST "$DEP_TRACK_URL/api/v1/bom" \
     -H "X-Api-Key: $DEP_TRACK_API_KEY" \
     -F "autoCreate=true" \
     -F "projectName=PaymentsPipeline" \
@@ -72,4 +71,3 @@ curl -s "$DEP_TRACK_URL/api/v1/metrics/project/PaymentsPipeline/current" \
 
 echo "✅ Report saved as $REPORT_FILE"
 echo "🎉 Payments Pipeline Process Completed!"
-
