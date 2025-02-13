@@ -6,7 +6,7 @@ echo "🔹 Starting SBOM generation..."
 
 # Check if security-audit folder exists; if not, create it
 if [ ! -d "security-audit" ]; then
-    mkdir security-audit
+    mkdir -p security-audit
     echo "📂 Created security-audit folder"
 else
     echo "📂 security-audit folder already exists"
@@ -28,14 +28,22 @@ if ! command -v syft &> /dev/null; then
     exit 127
 fi
 
-# Generate SBOM
+# Generate SBOM with Debug Mode
 echo "🛠️ Generating SBOM..."
-syft . -o cyclonedx-json > "$SBOM_FILE"
+syft . -o cyclonedx-json > "$SBOM_FILE" 2>&1 | tee debug_syft.log
 
-# Check SBOM file
+# Check SBOM file existence
+if [ ! -f "$SBOM_FILE" ]; then
+    echo "❌ SBOM file was not created. Checking for errors..."
+    cat debug_syft.log  # Show Syft debug output
+    exit 1
+fi
+
+# Check SBOM file content
 if [ ! -s "$SBOM_FILE" ]; then
-    echo "❌ SBOM file is empty or missing"
-    exit 23
+    echo "❌ SBOM file is empty. Checking for errors..."
+    cat debug_syft.log
+    exit 1
 fi
 
 echo "✅ SBOM successfully generated and saved at: $SBOM_FILE"
