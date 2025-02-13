@@ -1,13 +1,11 @@
 import os
 import glob
-import time
 import requests
 
-# Dependency Track API details
-DT_API_URL = "https://your-dependency-track-instance/api"
-DT_API_KEY = "your-api-key"  # Store this securely
+# Dependency Track API details from environment variables
+DT_API_URL = os.getenv("DT_API_URL", "https://your-dependency-track-instance/api")
+DT_API_KEY = os.getenv("DT_API_KEY")
 
-# Directory where SBOMs are stored
 SBOM_DIR = "security-audit"
 
 def get_latest_sbom():
