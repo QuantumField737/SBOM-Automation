@@ -26,21 +26,13 @@ jobs:
 
       - name: Upload SBOM to Dependency-Track
         run: |
-          PROJECT_NAME=$(basename $SBOM_FILE .json)
+          PROJECT_UUID="700aa36e-7240-4864-a717-2a7c6651c392"
 
-          # Create project in Dependency-Track
-          PROJECT_UUID=$(curl -s -X POST "$DEP_TRACK_URL/api/v1/project" \
-            -H "Content-Type: application/json" \
+          # Upload SBOM as a file
+          curl -s -X POST "$DEP_TRACK_URL/api/v1/bom" \
             -H "X-Api-Key: $DEP_TRACK_API_KEY" \
-            -d '{"name": "'"$PROJECT_NAME"'", "active": true}' | jq -r '.uuid')
-
-          # Upload SBOM
-          curl -s -X PUT "$DEP_TRACK_URL/api/v1/bom" \
-            -H "Content-Type: application/json" \
-            -H "X-Api-Key: $DEP_TRACK_API_KEY" \
-            -d '{"project": "'"$PROJECT_UUID"'", "bom": "'"$(base64 -w 0 $SBOM_FILE)"'"}'
-
-          echo "PROJECT_UUID=$PROJECT_UUID" >> $GITHUB_ENV
+            -F "project=$PROJECT_UUID" \
+            -F "bom=@$SBOM_FILE"
         env:
           DEP_TRACK_URL: ${{ secrets.DEP_TRACK_URL }}
           DEP_TRACK_API_KEY: ${{ secrets.DEP_TRACK_API_KEY }}
@@ -50,6 +42,8 @@ jobs:
 
       - name: Fetch Security Report & Save SARIF
         run: |
+          PROJECT_UUID="700aa36e-7240-4864-a717-2a7c6651c392"
+          
           REPORT=$(curl -s "$DEP_TRACK_URL/api/v1/metrics/project/$PROJECT_UUID/current" \
             -H "X-Api-Key: $DEP_TRACK_API_KEY")
 
@@ -67,4 +61,41 @@ jobs:
                 "driver": {
                   "name": "Dependency-Track",
                   "rules": [{
-                    "id
+                    "id": "high-vulnerabilities",
+                    "shortDescription": {"text": "High severity vulnerabilities"},
+                    "fullDescription": {"text": "Detected high severity vulnerabilities in project"},
+                    "defaultConfiguration": {"level": "warning"}
+                  }, {
+                    "id": "critical-vulnerabilities",
+                    "shortDescription": {"text": "Critical severity vulnerabilities"},
+                    "fullDescription": {"text": "Detected critical severity vulnerabilities in project"},
+                    "defaultConfiguration": {"level": "error"}
+                  }]
+                }
+              },
+              "results": [{
+                "ruleId": "high-vulnerabilities",
+                "level": "warning",
+                "message": {"text": "High severity vulnerabilities: $HIGH"}
+              }, {
+                "ruleId": "critical-vulnerabilities",
+                "level": "error",
+                "message": {"text": "Critical severity vulnerabilities: $CRITICAL"}
+              }],
+              "properties": {
+                "riskScore": "$RISK_SCORE"
+              }
+            }]
+          }
+          EOF
+
+          echo "SARIF report saved at $SARIF_FILE"
+        env:
+          DEP_TRACK_URL: ${{ secrets.DEP_TRACK_URL }}
+          DEP_TRACK_API_KEY: ${{ secrets.DEP_TRACK_API_KEY }}
+
+      - name: Save SARIF as an artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: SARIF_Report
+          path: security-audit/deptrack-results.sarif
