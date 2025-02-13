@@ -1,31 +1,28 @@
-name: Generate CycloneDX SBOM
+name: SBOM Upload to Dependency Track (Self-Hosted Runner)
 
 on:
   push:
     branches:
       - main
-  workflow_dispatch:
+  pull_request:
 
 jobs:
-  generate-sbom:
-    runs-on: self-hosted  # Use your self-hosted runner
-
+  upload_sbom:
+    runs-on: self-hosted  # This ensures the job runs on a self-hosted runner
     steps:
-      - name: Checkout Code
+      - name: Checkout Repository
         uses: actions/checkout@v3
 
-      - name: Set Up Node.js
-        uses: actions/setup-node@v3
+      - name: Set Up Python
+        uses: actions/setup-python@v4
         with:
-          node-version: '14'  # Ensure this matches your project's Node.js version
+          python-version: "3.x"
 
       - name: Install Dependencies
-        run: npm install
+        run: pip install requests
 
-      - name: Install CycloneDX NPM Tool
-        run: npm install --save-dev @cyclonedx/cyclonedx-npm
-
-      - name: Generate SBOM
-        run: |
-          mkdir -p security-audit
-          npx @cyclonedx/cyclonedx-npm --output-file security-audit/bom.json
+      - name: Run SBOM Upload Script
+        env:
+          DT_API_KEY: ${{ secrets.DT_API_KEY }}
+          DT_API_URL: ${{ secrets.DT_API_URL }}
+        run: python scripts/dependency_track_upload.py
