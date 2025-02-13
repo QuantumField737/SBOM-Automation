@@ -2,7 +2,7 @@
 
 set -e  # Exit on error
 
-echo "🔹 Starting SBOM generation..."
+echo "🔹 Starting SBOM generation using CycloneDX..."
 
 # Check if security-audit folder exists; if not, create it
 if [ ! -d "security-audit" ]; then
@@ -16,34 +16,38 @@ fi
 RUN_ID=$(date +%s)
 SBOM_FILE="security-audit/sbom-run-$RUN_ID.json"
 
-# Install Syft if missing
-if ! command -v syft &> /dev/null; then
-    echo "🛠️ Installing SBOM generator..."
-    curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh
+# Install CycloneDX CLI if missing
+if ! command -v cyclonedx &> /dev/null; then
+    echo "🛠️ Installing CycloneDX CLI..."
+    curl -sSfL https://github.com/CycloneDX/cyclonedx-cli/releases/latest/download/cyclonedx-linux-x64 -o /usr/local/bin/cyclonedx
+    chmod +x /usr/local/bin/cyclonedx
 fi
 
 # Verify installation
-if ! command -v syft &> /dev/null; then
-    echo "❌ Syft installation failed"
+if ! command -v cyclonedx &> /dev/null; then
+    echo "❌ CycloneDX installation failed"
     exit 127
 fi
 
-# Generate SBOM with Debug Mode
+# Generate SBOM based on detected project type
 echo "🛠️ Generating SBOM..."
-syft . -o cyclonedx-json > "$SBOM_FILE" 2>&1 | tee debug_syft.log
-
-# Check SBOM file existence
-if [ ! -f "$SBOM_FILE" ]; then
-    echo "❌ SBOM file was not created. Checking for errors..."
-    cat debug_syft.log  # Show Syft debug output
+if [ -f "package.json" ]; then
+    cyclonedx nodejs --output "$SBOM_FILE"
+elif [ -f "pom.xml" ]; then
+    cyclonedx maven --output "$SBOM_FILE"
+elif [ -f "requirements.txt" ]; then
+    cyclonedx python --output "$SBOM_FILE"
+elif [ -d ".git" ]; then
+    cyclonedx git --output "$SBOM_FILE"
+else
+    echo "❌ No recognized package manager found. SBOM generation failed."
     exit 1
 fi
 
-# Check SBOM file content
+# Check SBOM file
 if [ ! -s "$SBOM_FILE" ]; then
-    echo "❌ SBOM file is empty. Checking for errors..."
-    cat debug_syft.log
-    exit 1
+    echo "❌ SBOM file is empty or missing"
+    exit 23
 fi
 
 echo "✅ SBOM successfully generated and saved at: $SBOM_FILE"
