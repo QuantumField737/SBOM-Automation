@@ -1,4 +1,4 @@
-name: Generate SBOM with Snyk
+name: Generate SBOM with Snyk (Self-Hosted Runner)
 
 on:
   push:
@@ -8,19 +8,38 @@ on:
 
 jobs:
   generate-sbom:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted  # Uses self-hosted runner
 
     steps:
       - name: Checkout Code
         uses: actions/checkout@v3
 
-      - name: Install Snyk CLI
+      - name: Check Node.js Installation
+        run: |
+          if ! command -v node &> /dev/null; then
+            echo "Error: Node.js is not installed on the self-hosted runner!"
+            exit 1
+          fi
+          node --version
+
+      - name: Install Dependencies
+        run: |
+          if [ -f package.json ]; then
+            npm install
+          else
+            echo "Error: package.json not found!"
+            exit 1
+          fi
+
+      - name: Check Snyk Installation
         run: |
           if ! command -v snyk &> /dev/null; then
+            echo "Installing Snyk CLI..."
             curl -Lo snyk https://github.com/snyk/snyk/releases/latest/download/snyk-linux
             chmod +x snyk
             sudo mv snyk /usr/local/bin/
           fi
+          snyk --version
 
       - name: Authenticate Snyk
         run: snyk auth ${{ secrets.SNYK_TOKEN }}
@@ -33,10 +52,11 @@ jobs:
           REPO_NAME=${GITHUB_REPOSITORY##*/}
           TIMESTAMP=$(date +"%Y%m%d-%H%M%S")
           SBOM_FILE="security-audit/${REPO_NAME}_SBOM_${TIMESTAMP}.json"
-          
-          snyk sbom --format=cyclonedx1.4+json > "$SBOM_FILE"
 
-          # Verify SBOM file exists
+          echo "Generating SBOM at $SBOM_FILE..."
+          snyk sbom --format=cyclonedx1.4+json --package-manager=npm > "$SBOM_FILE"
+
+          echo "Checking SBOM file..."
           if [ ! -s "$SBOM_FILE" ]; then
             echo "Error: SBOM file is empty!"
             exit 1
