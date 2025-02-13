@@ -7,7 +7,7 @@ on:
 
 jobs:
   upload-sbom:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04  # Use the latest supported runner version
 
     steps:
       - name: Checkout repository
@@ -38,7 +38,7 @@ jobs:
           DEP_TRACK_API_KEY: ${{ secrets.DEP_TRACK_API_KEY }}
 
       - name: Wait for Dependency-Track Processing
-        run: sleep 180  # Wait 3 minutes
+        run: sleep 180  # Wait 3 minutes for analysis
 
       - name: Fetch Security Report & Save SARIF
         run: |
@@ -95,7 +95,4 @@ jobs:
           DEP_TRACK_API_KEY: ${{ secrets.DEP_TRACK_API_KEY }}
 
       - name: Save SARIF as an artifact
-        uses: actions/upload-artifact@v3
-        with:
-          name: SARIF_Report
-          path: security-audit/deptrack-results.sarif
+  
