@@ -1,28 +1,22 @@
-name: SBOM Upload to Dependency Track (Self-Hosted Runner)
+name: SBOM Upload to Dependency Track (Self-Hosted)
 
 on:
   push:
-    branches:
-      - main
-  pull_request:
+    paths:
+      - "security-audit/*.json"  # Trigger only when SBOMs are added/updated
+  workflow_dispatch:  # Allows manual trigger
 
 jobs:
   upload_sbom:
-    runs-on: self-hosted  # This ensures the job runs on a self-hosted runner
+    runs-on: self-hosted  # Executes on your self-hosted runner
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v3
 
-      - name: Set Up Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: "3.x"
-
-      - name: Install Dependencies
-        run: pip install requests
+      - name: Make Shell Script Executable
+        run: chmod +x scripts/dependency_track_upload.sh
 
       - name: Run SBOM Upload Script
         env:
           DT_API_KEY: ${{ secrets.DT_API_KEY }}
-          DT_API_URL: ${{ secrets.DT_API_URL }}
-        run: python scripts/dependency_track_upload.py
+        run: scripts/dependency_track_upload.sh
